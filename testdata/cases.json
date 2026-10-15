@@ -1,0 +1,46 @@
+{
+  "cases": [
+    {
+      "name": "\ubcf4\uace0\uc11c (NFD)",
+      "input": "\u1107\u1169\u1100\u1169\u1109\u1165.docx",
+      "expected": "\ubcf4\uace0\uc11c.docx",
+      "changed": true
+    },
+    {
+      "name": "\uc774\ubbf8 \uc815\uc0c1",
+      "input": "\ubcf4\uace0\uc11c.docx",
+      "expected": "\ubcf4\uace0\uc11c.docx",
+      "changed": false
+    },
+    {
+      "name": "\uc601\ubb38\ub9cc",
+      "input": "report_v2.pdf",
+      "expected": "report_v2.pdf",
+      "changed": false
+    },
+    {
+      "name": "\uc11e\uc778 \uc774\ub984",
+      "input": "2026_\u1112\u1161\u11ab\u1100\u1173\u11af_final.hwp",
+      "expected": "2026_\ud55c\uae00_final.hwp",
+      "changed": true
+    },
+    {
+      "name": "\ubc1b\uce68 \uc788\ub294 \uae00\uc790",
+      "input": "\u1100\u1161\u11a8\u1109\u1161",
+      "expected": "\uac01\uc0ac",
+      "changed": true
+    },
+    {
+      "name": "\ud655\uc7a5\uc790 \uc5c6\uc74c",
+      "input": "\u1109\u1161\u110c\u1175\u11ab",
+      "expected": "\uc0ac\uc9c4",
+      "changed": true
+    },
+    {
+      "name": "\uacf5\ubc31\u00b7\uad04\ud638",
+      "input": "\u1112\u116c\u110b\u1174\u1105\u1169\u11a8 (1).txt",
+      "expected": "\ud68c\uc758\ub85d (1).txt",
+      "changed": true
+    }
+  ]
+}
