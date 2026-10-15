@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>자/모음 분리 복구기</title>
+  <meta name="description" content="맥에서 온 한글 파일 이름이 ㅎㅏㄴㄱㅡㄹ처럼 풀어져 보일 때 한 번에 고칩니다. 파일은 이 컴퓨터 밖으로 나가지 않습니다.">
+  <style>
+    :root {
+      --bg: #f7f5f2; --card: #ffffff; --ink: #1f2328; --sub: #5b6470; --line: #e3ded6;
+      --accent: #6b3f24; --accent-ink: #ffffff; --ok: #1f7a46; --warn: #a15c00; --err: #b42318;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #15171a; --card: #1e2125; --ink: #e8e6e3; --sub: #a3aab3; --line: #33373d;
+        --accent: #e0b48a; --accent-ink: #1b1209; --ok: #6fd39b; --warn: #f0b35c; --err: #ff8a80;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #15171a; --card: #1e2125; --ink: #e8e6e3; --sub: #a3aab3; --line: #33373d;
+      --accent: #e0b48a; --accent-ink: #1b1209; --ok: #6fd39b; --warn: #f0b35c; --err: #ff8a80;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink);
+      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+    h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.02em; }
+    .lead { color: var(--sub); margin: 0 0 20px; }
+    .privacy { display: inline-block; font-size: 14px; padding: 6px 10px; border: 1px solid var(--line);
+      border-radius: 999px; background: var(--card); margin-bottom: 24px; }
+    .modes { display: grid; gap: 12px; grid-template-columns: 1fr; }
+    @media (min-width: 640px) { .modes.two { grid-template-columns: 1fr 1fr; } }
+    .mode { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+    .mode h2 { font-size: 17px; margin: 0 0 6px; }
+    .mode p { font-size: 14px; color: var(--sub); margin: 0 0 14px; }
+    button, .button { font: inherit; font-weight: 700; border: 0; border-radius: 10px; padding: 10px 16px;
+      background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+    button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+    button:disabled { opacity: .5; cursor: default; }
+    .drop { border: 2px dashed var(--line); border-radius: 12px; padding: 14px; text-align: center;
+      font-size: 14px; color: var(--sub); margin-top: 10px; }
+    .drop.over { border-color: var(--accent); color: var(--ink); }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    #result { margin-top: 28px; display: none; }
+    #summary { font-weight: 700; margin: 0 0 10px; }
+    .table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top;
+      word-break: break-all; }
+    th { color: var(--sub); font-weight: 700; white-space: nowrap; }
+    tr:last-child td { border-bottom: 0; }
+    .from { color: var(--sub); }
+    .st-done { color: var(--ok); font-weight: 700; } .st-skip { color: var(--warn); font-weight: 700; }
+    .st-err { color: var(--err); font-weight: 700; }
+    #actions { margin-top: 14px; }
+    footer { margin-top: 40px; font-size: 13px; color: var(--sub); }
+    footer a { color: var(--accent); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>자/모음 분리 복구기</h1>
+  <p class="lead">맥에서 온 한글 파일 이름이 <b>ㅎㅏㄴㄱㅡㄹ</b>처럼 풀어져 보일 때 한 번에 고칩니다.</p>
+  <span class="privacy">🔒 파일은 이 컴퓨터 밖으로 나가지 않습니다 — 모든 처리를 브라우저 안에서 합니다</span>
+
+  <section class="modes" id="modes">
+    <div class="mode" id="mode-folder" hidden>
+      <h2>폴더 바로 고치기</h2>
+      <p>Chrome·Edge에서 폴더를 고르면 그 안의 파일·폴더 이름을 그 자리에서 고칩니다.</p>
+      <button id="pick-folder">폴더 고르기</button>
+    </div>
+    <div class="mode">
+      <h2>고친 ZIP 받기</h2>
+      <p>모든 브라우저. 파일·폴더·ZIP을 넣으면 이름을 고친 ZIP을 내려받습니다. 원본은 그대로 둡니다.</p>
+      <div class="row">
+        <label class="button" for="pick-files">파일·ZIP 고르기</label>
+        <input id="pick-files" type="file" multiple hidden>
+        <label class="button secondary" for="pick-dir" style="border:1px solid var(--accent);background:transparent;color:var(--accent)">폴더 고르기</label>
+        <input id="pick-dir" type="file" webkitdirectory multiple hidden>
+      </div>
+      <div class="drop" id="drop">여기에 끌어다 놓아도 됩니다</div>
+    </div>
+  </section>
+
+  <section id="result">
+    <p id="summary"></p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>지금 이름</th><th>고친 이름</th><th>상태</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div id="actions" class="row">
+      <button id="fix-all">모두 고치기</button>
+      <button id="reset" class="secondary">처음으로</button>
+    </div>
+  </section>
+
+  <footer>이름을 NFC(합친 글자)로 바꾸는 것만 합니다. 같은 이름이 이미 있으면 바꾸지 않고 건너뜁니다.
+    · <a href="https://github.com/jwkim1421/hangul-name-fixer">소스 코드</a></footer>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
