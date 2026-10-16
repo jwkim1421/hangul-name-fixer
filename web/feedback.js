@@ -2,7 +2,8 @@
 // 결과는 설문지에 연결된 구글 시트에 한 줄씩 쌓인다.
 
 // 설문지 "미리 채워진 링크"(칸마다 내용·연락처·버전·환경이라고 적어서 만든 것). 비어 있으면 아직 연결 전.
-export const FEEDBACK_LINK = "";
+export const FEEDBACK_LINK =
+  "https://docs.google.com/forms/d/e/1FAIpQLScZFf8ng2N-pJvPRHpz2qAyKTiX-HWFYfvR9Z-YNKHa5Q4WKA/viewform?usp=pp_url&entry.46769525=%EB%82%B4%EC%9A%A9&entry.2092205204=%EC%97%B0%EB%9D%BD%EC%B2%98&entry.138364016=%EB%B2%84%EC%A0%84&entry.2113207299=%ED%99%98%EA%B2%BD";
 
 const LABELS = { 내용: "text", 연락처: "contact", 버전: "version", 환경: "env" };
 

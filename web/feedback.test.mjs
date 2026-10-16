@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formFromPrefilledLink, feedbackRequest } from "./feedback.js";
+import { FEEDBACK_LINK, formFromPrefilledLink, feedbackRequest } from "./feedback.js";
 
 // 구글 설문지 "미리 채워진 링크"에 각 칸 이름(내용·연락처·버전·환경)을 적어 두면 칸 번호를 알 수 있다
 const LINK = "https://docs.google.com/forms/d/e/1FAIpQLSd_TEST/viewform?usp=pp_url"
@@ -11,6 +11,12 @@ test("미리 채워진 링크 → 보낼 주소와 칸 번호", () => {
     action: "https://docs.google.com/forms/d/e/1FAIpQLSd_TEST/formResponse",
     fields: { text: "entry.111", contact: "entry.222", version: "entry.333", env: "entry.444" },
   });
+});
+
+test("연결된 설문지 링크는 네 칸을 모두 찾을 수 있어야 한다(링크가 깨지면 의견이 조용히 사라진다)", () => {
+  const form = formFromPrefilledLink(FEEDBACK_LINK);
+  assert.ok(form, "FEEDBACK_LINK를 해석하지 못했다");
+  assert.match(form.action, /^https:\/\/docs\.google\.com\/forms\/d\/e\/[\w-]+\/formResponse$/);
 });
 
 test("설문지 링크가 없거나 구글 설문지가 아니면 null", () => {
