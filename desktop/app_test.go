@@ -118,3 +118,11 @@ func TestSettingsPersist(t *testing.T) {
 		t.Fatal("다시 열었을 때 체크 상태가 남아야 한다")
 	}
 }
+
+// 의견 보내기에 함께 붙는 정보: 앱 버전(빌드 때 -ldflags로 넣음, 기본 dev)과 운영체제
+func TestGetInfo(t *testing.T) {
+	info := testApp(t).GetInfo()
+	if info.Version != "dev" || info.OS == "" {
+		t.Fatalf("info = %+v", info)
+	}
+}

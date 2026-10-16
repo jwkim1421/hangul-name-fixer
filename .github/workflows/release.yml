@@ -12,7 +12,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
       - run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
-      - run: wails build -platform windows/amd64 -o hangul-name-fixer.exe -trimpath
+      - run: wails build -platform windows/amd64 -o hangul-name-fixer.exe -trimpath -ldflags "-X main.version=${{ github.ref_name }}"
         working-directory: desktop
       - shell: pwsh
         run: |

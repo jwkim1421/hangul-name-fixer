@@ -1,5 +1,6 @@
 // 자/모음 분리 복구기 화면. 규칙은 fix.js 하나 — 여기서는 파일을 모으고, 미리 보여 주고, 누르면 고친다.
 import { asSeenOnWindows, fixName, planNames, uniqueName } from "./fix.js";
+import { FEEDBACK_LINK, formFromPrefilledLink, sendFeedback } from "./feedback.js";
 
 const $ = (id) => document.getElementById(id);
 let job = null; // { kind: "folder" | "zip", items: [...], run: async () => {} }
@@ -284,6 +285,49 @@ if (inWails) {
   $("modes").classList.add("two");
   $("pick-folder").addEventListener("click", pickFolder);
 }
+// ── 의견 보내기(구글 설문지 — 로그인 없음) ─────────────────────────────────
+const feedbackForm = formFromPrefilledLink(FEEDBACK_LINK);
+const feedbackInfo = inWails
+  ? Promise.resolve().then(() => goApp().GetInfo()).catch(() => ({ Version: "?", OS: "?" }))
+    .then((i) => ({ version: i.Version, env: i.OS }))
+  : Promise.resolve({ version: "웹", env: navigator.userAgent });
+function fbStatus(text, cls) {
+  $("fb-status").textContent = text;
+  $("fb-status").className = cls || "";
+}
+$("open-feedback").addEventListener("click", async () => {
+  const info = await feedbackInfo;
+  $("fb-info").textContent = `함께 보내는 정보: 버전 ${info.version} · ${info.env} — 파일 이름·내용은 보내지 않습니다`;
+  fbStatus("");
+  $("fb-send").disabled = false;
+  $("feedback").showModal();
+  $("fb-text").focus();
+});
+$("fb-close").addEventListener("click", () => $("feedback").close());
+$("fb-text").addEventListener("input", () => fbStatus(""));
+// 공개된 웹 버전에서는 설문지를 연결하기 전까지 링크를 숨긴다(프로그램 시험판에서는 창을 볼 수 있게 둔다)
+if (!feedbackForm && !inWails) {
+  $("open-feedback").hidden = true;
+  $("open-feedback").previousSibling.textContent = ""; // 앞의 " · " 구분자도 지운다
+}
+$("fb-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!feedbackForm) return fbStatus("설문지가 아직 연결되지 않았습니다(준비 중).", "err");
+  if (!$("fb-text").value.trim()) return fbStatus("내용을 적어 주세요.", "err");
+  $("fb-send").disabled = true;
+  fbStatus("보내는 중…");
+  try {
+    await sendFeedback(feedbackForm, { text: $("fb-text").value, contact: $("fb-contact").value, ...(await feedbackInfo) });
+    fbStatus("보냈습니다. 고맙습니다!", "ok");
+    $("fb-text").value = "";
+    setTimeout(() => $("feedback").open && $("feedback").close(), 1500);
+  } catch {
+    fbStatus("보내지 못했습니다 — 인터넷 연결을 확인하고 다시 시도해 주세요.", "err");
+  } finally {
+    $("fb-send").disabled = false;
+  }
+});
+
 $("pick-files").addEventListener("change", (e) => fromFiles(e.target.files));
 $("pick-dir").addEventListener("change", (e) => fromFiles(e.target.files));
 const drop = $("drop");
