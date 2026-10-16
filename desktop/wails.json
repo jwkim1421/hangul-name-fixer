@@ -1,0 +1,21 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "hangul-name-fixer",
+  "outputfilename": "hangul-name-fixer",
+  "frontend:dir": "frontend",
+  "frontend:install": "",
+  "frontend:build": "node copy-web.mjs",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "",
+  "author": {
+    "name": "jwkim1421",
+    "email": "80744143+jwkim1421@users.noreply.github.com"
+  },
+  "info": {
+    "companyName": "jwkim1421",
+    "productName": "자/모음 분리 복구기",
+    "productVersion": "0.1.0",
+    "copyright": "MIT License",
+    "comments": "맥에서 온 한글 파일 이름(ㅎㅏㄴㄱㅡㄹ)을 합친 글자(NFC)로 고칩니다"
+  }
+}

@@ -1,4 +1,8 @@
-build/
+/build/
 node_modules/
 *.exe
 .DS_Store
+desktop/build/bin/
+desktop/frontend/dist/*
+!desktop/frontend/dist/.gitkeep
+desktop/frontend/wailsjs/

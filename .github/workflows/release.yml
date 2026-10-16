@@ -1,0 +1,30 @@
+# 태그 v*를 푸시하면 윈도우 exe를 빌드해 Release에 올리고, SHA256과 VirusTotal 검사 링크를 붙인다.
+name: release
+on: { push: { tags: ["v*"] } }
+permissions: { contents: write }
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.25" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+      - run: wails build -platform windows/amd64 -o hangul-name-fixer.exe -trimpath
+        working-directory: desktop
+      - shell: pwsh
+        run: |
+          $f = "desktop/build/bin/hangul-name-fixer.exe"
+          (Get-FileHash $f -Algorithm SHA256).Hash.ToLower() + "  hangul-name-fixer.exe" | Out-File -Encoding ascii desktop/build/bin/SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/build/bin/hangul-name-fixer.exe
+            desktop/build/bin/SHA256SUMS.txt
+      - uses: crazy-max/ghaction-virustotal@v4
+        with:
+          vt_api_key: ${{ secrets.VT_API_KEY }}
+          files: desktop/build/bin/hangul-name-fixer.exe
+          update_release_body: true

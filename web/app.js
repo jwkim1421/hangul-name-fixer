@@ -143,8 +143,54 @@ async function fromFiles(files) {
     : "고칠 이름이 없습니다. 모두 정상입니다.");
 }
 
+// ── ③ 윈도우 프로그램(Wails) 안: 폴더를 고르면 Go(core)가 이름을 바꾼다 ──────────
+const inWails = typeof window.go !== "undefined";
+const STATUS = { done: ["고침", "st-done"], "skipped-exists": ["같은 이름이 있어 건너뜀", "st-skip"] };
+
+async function wailsFolder() {
+  const app = window.go.main.App;
+  let root;
+  try {
+    root = await app.ChooseFolder();
+  } catch (e) {
+    alert("폴더를 열지 못했습니다: " + e);
+    return;
+  }
+  if (!root) return; // 취소
+  const sep = root.includes("\\") ? "\\" : "/";
+  const rel = (dir) => (dir.length > root.length ? dir.slice(root.length + 1) + sep : "");
+  const fixPath = (p) => p.split(sep).map((s) => fixName(s).fixed).join(sep);
+  const plan = (await app.Preview(root)) || [];
+  const items = plan.map((r) => ({ key: r.Dir + sep + r.From, from: rel(r.Dir) + r.From, to: fixPath(rel(r.Dir)) + r.To }));
+  job = {
+    kind: "wails", items,
+    run: async () => {
+      const res = (await app.FixAll(root)) || [];
+      const byKey = new Map(res.map((r) => [r.Dir + sep + r.From, r.Status]));
+      for (const it of items) {
+        const st = byKey.get(it.key) || "error: 다시 확인 필요";
+        const [text, cls] = STATUS[st] || [`실패: ${st.replace(/^error: /, "")}`, "st-err"];
+        setStatus(it, text, cls);
+      }
+      $("summary").textContent = "다 고쳤습니다. 원래 이름은 그 폴더의 되돌리기_날짜.csv에 남겼습니다.";
+    },
+  };
+  show(items, items.length ? `고칠 이름 ${items.length}개 (폴더: ${root})` : "고칠 이름이 없습니다. 모두 정상입니다.");
+}
+
 // ── 연결 ───────────────────────────────────────────────────────────────
-if ("showDirectoryPicker" in window) {
+if (inWails) {
+  $("mode-folder").hidden = false;
+  $("mode-zip").hidden = true;
+  $("mode-folder").querySelector("p").textContent =
+    "폴더를 고르면 안의 파일·폴더 이름을 고치고, 원래 이름을 되돌리기 목록(CSV)으로 그 폴더에 남깁니다.";
+  $("pick-folder").addEventListener("click", wailsFolder);
+  // 프로그램 안에서 바깥 링크를 누르면 기본 브라우저로 연다(창이 그 페이지로 바뀌지 않게)
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("a[href^='http']");
+    if (a && window.runtime) { e.preventDefault(); window.runtime.BrowserOpenURL(a.href); }
+  });
+} else if ("showDirectoryPicker" in window) {
   $("mode-folder").hidden = false;
   $("modes").classList.add("two");
   $("pick-folder").addEventListener("click", pickFolder);
