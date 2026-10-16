@@ -1,5 +1,5 @@
 // 자/모음 분리 복구기 화면. 규칙은 fix.js 하나 — 여기서는 파일을 모으고, 미리 보여 주고, 누르면 고친다.
-import { asSeenOnWindows, fixName, planNames } from "./fix.js";
+import { asSeenOnWindows, fixName, planNames, uniqueName } from "./fix.js";
 
 const $ = (id) => document.getElementById(id);
 let job = null; // { kind: "folder" | "zip", items: [...], run: async () => {} }
@@ -11,14 +11,44 @@ function show(items, summary) {
     tr.innerHTML = `<td class="from"></td><td></td><td class="st"></td>`;
     tr.children[0].textContent = asSeenOnWindows(it.from); // 맥에서는 NFD·NFC가 똑같아 보인다
     tr.children[1].textContent = it.to;
-    tr.children[2].textContent = it.status || "고칠 예정";
+    tr.children[2].textContent = it.status || "대기";
     it.row = tr;
     $("rows").append(tr);
   }
   $("summary").textContent = summary;
+  $("csv-line").hidden = true;
   $("result").style.display = "block";
   $("fix-all").disabled = items.length === 0;
+  if (inWails) growWindow();
   $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// 윈도우 프로그램: 시작 화면은 작게 두고, 결과 표가 나오면 창을 키운다(이미 크면 그대로).
+// "처음으로"를 누르면 키우기 전 크기로 돌린다 — 그사이 사용자가 크기를 바꿨으면 그대로 둔다.
+const TALL = 620;
+let grownFrom = null;
+async function growWindow() {
+  const rt = window.runtime;
+  if (!rt || !rt.WindowGetSize) return;
+  const s = await rt.WindowGetSize();
+  if (s.h < TALL) { grownFrom = s; rt.WindowSetSize(s.w, TALL); }
+}
+async function shrinkWindow() {
+  const rt = window.runtime;
+  if (!grownFrom || !rt || !rt.WindowGetSize) return;
+  const s = await rt.WindowGetSize();
+  if (s.h === TALL) rt.WindowSetSize(s.w, grownFrom.h);
+  grownFrom = null;
+}
+
+const EMPTY = "수정할 파일이 없습니다.";
+const DONE = ["완료", "st-done"];
+const DONE_SUFFIX = ["완료 (번호 붙임)", "st-done"]; // 같은 이름이 있어 끝에 (1), (2)…를 붙였다
+
+// 같은 이름이 있어 번호를 붙였으면 "수정된 파일" 칸도 실제 이름으로
+function setTo(it, to) {
+  it.to = to;
+  it.row.children[1].textContent = to;
 }
 
 function setStatus(it, text, cls) {
@@ -69,21 +99,25 @@ async function pickFolder() {
           setStatus(it, "이 브라우저는 이름 바꾸기를 지원하지 않습니다 — ZIP 방식을 쓰세요", "st-err");
           continue;
         }
-        const newName = fixName(it.name).fixed;
+        let newName = fixName(it.name).fixed;
+        let status = DONE;
         if (await existsAsOther(it.parent, it.handle, newName)) {
-          setStatus(it, "같은 이름이 있어 건너뜀", "st-skip");
-          continue;
+          const names = new Set();
+          for await (const n of it.parent.keys()) names.add(n);
+          newName = uniqueName(newName, it.handle.kind === "directory", (n) => names.has(n));
+          setTo(it, it.to.slice(0, it.to.lastIndexOf("/") + 1) + newName);
+          status = DONE_SUFFIX;
         }
         try {
           await it.handle.move(newName);
-          setStatus(it, "고침", "st-done");
+          setStatus(it, ...status);
         } catch (e) {
           setStatus(it, `실패: ${e.name}${e.name === "NotAllowedError" ? " — 권한이 없습니다. ZIP 방식을 쓰세요" : ""}`, "st-err");
         }
       }
     },
   };
-  show(items, items.length ? `고칠 이름 ${items.length}개 (폴더: ${root.name})` : "고칠 이름이 없습니다. 모두 정상입니다.");
+  show(items, items.length ? `수정할 파일 ${items.length}개 (폴더: ${root.name})` : EMPTY);
 }
 
 // ── ② 고친 ZIP 받기 ────────────────────────────────────────────────────
@@ -117,18 +151,23 @@ async function fromFiles(files) {
         if (e.dir) out.folder(path);
         else out.file(path, await e.getData(), { date: e.date });
       };
-      // 이미 정상인 이름이 먼저 자리를 잡는다 — 고친 이름이 겹치면 덮어쓰지 않고 원래 이름으로 둔다
+      // 이미 정상인 이름이 먼저 자리를 잡는다 — 고친 이름이 겹치면 덮어쓰지 않고 끝에 (1), (2)…를 붙인다.
+      // 폴더가 겹치면 같은 폴더로 합친다(안의 파일은 각자 위 규칙을 따른다).
       for (const e of entries) if (!plan.has(e.path)) await put(e, e.path);
       for (const e of entries) {
         if (!plan.has(e.path)) continue;
         const it = items.find((i) => i.from === e.path);
         const to = plan.get(e.path);
-        if (used.has(to)) {
-          await put(e, e.path);
-          setStatus(it, "같은 이름이 있어 건너뜀", "st-skip");
+        if (!used.has(to) || e.dir) {
+          if (!used.has(to)) await put(e, to);
+          setStatus(it, ...DONE);
         } else {
-          await put(e, to);
-          setStatus(it, "고침", "st-done");
+          const cut = to.lastIndexOf("/") + 1;
+          const dir = to.slice(0, cut);
+          const path = dir + uniqueName(to.slice(cut), false, (n) => used.has(dir + n));
+          await put(e, path);
+          setTo(it, path);
+          setStatus(it, ...DONE_SUFFIX);
         }
       }
       const blob = await out.generateAsync({ type: "blob" });
@@ -139,52 +178,79 @@ async function fromFiles(files) {
       setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
     },
   };
-  show(items, items.length ? `고칠 이름 ${items.length}개 — "모두 고치기"를 누르면 고친 ZIP을 내려받습니다`
-    : "고칠 이름이 없습니다. 모두 정상입니다.");
+  show(items, items.length ? `수정할 파일 ${items.length}개 — "수정"을 누르면 고친 ZIP을 내려받습니다` : EMPTY);
 }
 
-// ── ③ 윈도우 프로그램(Wails) 안: 폴더를 고르면 Go(core)가 이름을 바꾼다 ──────────
+// ── ③ 윈도우 프로그램(Wails) 안: 폴더·파일을 고르면 Go(core)가 이름을 바꾼다 ──────────
 const inWails = typeof window.go !== "undefined";
-const STATUS = { done: ["고침", "st-done"], "skipped-exists": ["같은 이름이 있어 건너뜀", "st-skip"] };
+const goApp = () => window.go.main.App;
+let makeCSV = false; // "수정 목록(*.csv) 파일 생성" — 프로그램이 설정 파일에 기억한다
 
-async function wailsFolder() {
-  const app = window.go.main.App;
-  let root;
+async function wailsPick(kind) {
+  let picked;
   try {
-    root = await app.ChooseFolder();
+    picked = kind === "folder" ? await goApp().ChooseFolder() : await goApp().ChooseFiles();
   } catch (e) {
-    alert("폴더를 열지 못했습니다: " + e);
+    alert(`${kind === "folder" ? "폴더" : "파일"}를 열지 못했습니다: ` + e);
     return;
   }
-  if (!root) return; // 취소
-  const sep = root.includes("\\") ? "\\" : "/";
-  const rel = (dir) => (dir.length > root.length ? dir.slice(root.length + 1) + sep : "");
+  if (!picked || picked.length === 0) return; // 취소
+  const first = kind === "folder" ? picked : picked[0];
+  const sep = first.includes("\\") ? "\\" : "/";
+  const root = kind === "folder" ? picked : "";
+  const rel = (dir) => (root && dir.length > root.length ? dir.slice(root.length + 1) + sep : "");
   const fixPath = (p) => p.split(sep).map((s) => fixName(s).fixed).join(sep);
-  const plan = (await app.Preview(root)) || [];
-  const items = plan.map((r) => ({ key: r.Dir + sep + r.From, from: rel(r.Dir) + r.From, to: fixPath(rel(r.Dir)) + r.To }));
+  const plan = (await (kind === "folder" ? goApp().Preview(picked) : goApp().PreviewFiles(picked))) || [];
+  const items = plan.map((r) => ({ key: r.Dir + sep + r.From, prefix: fixPath(rel(r.Dir)), from: rel(r.Dir) + r.From }));
+  items.forEach((it, i) => (it.to = it.prefix + plan[i].To));
   job = {
     kind: "wails", items,
     run: async () => {
-      const res = (await app.FixAll(root)) || [];
-      const byKey = new Map(res.map((r) => [r.Dir + sep + r.From, r.Status]));
-      for (const it of items) {
-        const st = byKey.get(it.key) || "error: 다시 확인 필요";
-        const [text, cls] = STATUS[st] || [`실패: ${st.replace(/^error: /, "")}`, "st-err"];
-        setStatus(it, text, cls);
+      let res;
+      try {
+        res = await (kind === "folder" ? goApp().FixAll(picked, makeCSV) : goApp().FixFiles(picked, makeCSV));
+      } catch (e) {
+        $("summary").textContent = "수정하지 못했습니다: " + e;
+        return;
       }
-      $("summary").textContent = "다 고쳤습니다. 원래 이름은 그 폴더의 되돌리기_날짜.csv에 남겼습니다.";
+      const byKey = new Map((res.Items || []).map((r) => [r.Dir + sep + r.From, r]));
+      let failed = 0;
+      for (const it of items) {
+        const r = byKey.get(it.key);
+        const st = r ? r.Status : "error: 다시 확인 필요";
+        if (st === "done") setStatus(it, ...DONE);
+        else if (st === "done-suffix") { setTo(it, it.prefix + r.To); setStatus(it, ...DONE_SUFFIX); }
+        else { failed++; setStatus(it, `실패: ${st.replace(/^error: /, "")}`, "st-err"); }
+      }
+      $("summary").textContent = failed ? `수정 완료 — 실패 ${failed}개는 상태 칸을 확인하세요` : "수정 완료";
+      if (res.CSV) {
+        $("csv-path").textContent = res.CSV;
+        $("open-csv").onclick = () => goApp().RevealInFolder(res.CSV).catch((e) => alert("폴더를 열지 못했습니다: " + e));
+        $("csv-line").hidden = false;
+      }
     },
   };
-  show(items, items.length ? `고칠 이름 ${items.length}개 (폴더: ${root})` : "고칠 이름이 없습니다. 모두 정상입니다.");
+  const where = kind === "folder" ? `폴더: ${picked}` : `선택한 파일 ${picked.length}개 중`;
+  show(items, items.length ? `수정할 파일 ${items.length}개 (${where})` : EMPTY);
 }
 
 // ── 연결 ───────────────────────────────────────────────────────────────
 if (inWails) {
+  document.body.classList.add("app");
+  $("privacy").textContent = "🔒 파일 내용에 접근하지 않으며 외부로 전송하지 않습니다 — 이 컴퓨터에서 파일 이름만 바꿉니다";
   $("mode-folder").hidden = false;
   $("mode-zip").hidden = true;
-  $("mode-folder").querySelector("p").textContent =
-    "폴더를 고르면 안의 파일·폴더 이름을 고치고, 원래 이름을 되돌리기 목록(CSV)으로 그 폴더에 남깁니다.";
-  $("pick-folder").addEventListener("click", wailsFolder);
+  $("folder-title").textContent = "폴더·파일 선택하여 수정";
+  $("folder-desc").textContent = "폴더나 파일을 선택하면 수정할 파일이 표시됩니다.";
+  $("pick-app-files").hidden = false;
+  $("csv-option").hidden = false;
+  $("pick-folder").addEventListener("click", () => wailsPick("folder"));
+  $("pick-app-files").addEventListener("click", () => wailsPick("files"));
+  goApp().GetSettings().then((s) => { makeCSV = !!(s && s.MakeCSV); $("make-csv").checked = makeCSV; }).catch(() => {});
+  $("make-csv").addEventListener("change", (e) => {
+    makeCSV = e.target.checked;
+    goApp().SaveSettings({ MakeCSV: makeCSV }).catch(() => {});
+  });
   // 프로그램 안에서 바깥 링크를 누르면 기본 브라우저로 연다(창이 그 페이지로 바뀌지 않게)
   document.addEventListener("click", (e) => {
     const a = e.target.closest("a[href^='http']");
@@ -206,4 +272,9 @@ $("fix-all").addEventListener("click", async () => {
   $("fix-all").disabled = true;
   await job.run();
 });
-$("reset").addEventListener("click", () => { job = null; $("result").style.display = "none"; });
+$("reset").addEventListener("click", () => {
+  job = null;
+  $("csv-line").hidden = true;
+  $("result").style.display = "none";
+  if (inWails) shrinkWindow();
+});

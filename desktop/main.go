@@ -18,8 +18,12 @@ func main() {
 	// Create application with options
 	err := wails.Run(&options.App{
 		Title:  "자/모음 분리 복구기",
-		Width:  920,
-		Height: 760,
+		// 시작 화면은 작게 띄우고, 결과 표가 나오면 화면(app.js)이 창을 키운다.
+		// 이보다 작게 줄이면 버튼과 문구가 밀려나 최소 크기를 둔다(2026-10-16 사용자 피드백)
+		Width:     720,
+		Height:    380,
+		MinWidth:  600,
+		MinHeight: 360,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

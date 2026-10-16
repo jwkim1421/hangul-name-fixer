@@ -13,6 +13,24 @@ export function planNames(paths) {
     .filter((r) => r.from !== r.to);
 }
 
+/**
+ * 같은 이름이 있으면 "이름 (1).확장자", 그것도 있으면 (2), (3)… — Go core.UniqueName과 같은 규칙.
+ * 이미 "이름 (1)"이면 번호를 올린다. 폴더와 점으로 시작하는 이름(.env)은 확장자가 없다.
+ */
+export function uniqueName(name, isDir, exists) {
+  if (!exists(name)) return name;
+  let stem = name, ext = "";
+  const dot = name.lastIndexOf(".");
+  if (!isDir && dot > 0) { stem = name.slice(0, dot); ext = name.slice(dot); }
+  let n = 1;
+  const m = stem.match(/^(.*) \((\d+)\)$/);
+  if (m) { stem = m[1]; n = Number(m[2]) + 1; }
+  for (;; n++) {
+    const c = `${stem} (${n})${ext}`;
+    if (!exists(c)) return c;
+  }
+}
+
 // 미리보기용: 풀어진 자모(조합용 U+1100~)를 윈도우 탐색기에서 보이는 낱자(ㄱ, ㅏ …)로 바꾼다.
 // 맥 화면에서는 NFD와 NFC가 똑같아 보여서, 무엇이 고쳐지는지 보이지 않는다.
 const LEAD = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";

@@ -58,7 +58,7 @@ func TestPlanAndApply(t *testing.T) {
 	if len(plan) != 2 || plan[0].To != "보고서.txt" || plan[1].To != "사진" {
 		t.Fatalf("plan = %+v (자식 파일 먼저, 그다음 폴더)", plan)
 	}
-	undo := filepath.Join(root, "되돌리기.csv")
+	undo := filepath.Join(root, "수정목록.csv")
 	res := Apply(plan, undo)
 	for _, r := range res {
 		if r.Status != "done" {
@@ -69,11 +69,12 @@ func TestPlanAndApply(t *testing.T) {
 		t.Fatal("고친 경로가 없다:", err)
 	}
 	if _, err := os.Stat(undo); err != nil {
-		t.Fatal("되돌리기.csv가 없다")
+		t.Fatal("수정목록.csv가 없다")
 	}
 }
 
-func TestExistingTargetIsSkipped(t *testing.T) {
+// 같은 이름이 이미 있으면 덮어쓰지 않고 접미사 (1)을 붙인다(2026-10-16 사용자 결정 — 예전에는 건너뛰었다)
+func TestExistingTargetGetsSuffix(t *testing.T) {
 	root := t.TempDir()
 	os.WriteFile(filepath.Join(root, nfd("보고서.txt")), []byte("nfd"), 0o644)
 	if err := os.WriteFile(filepath.Join(root, "보고서.txt"), []byte("nfc"), 0o644); err != nil {
@@ -85,12 +86,54 @@ func TestExistingTargetIsSkipped(t *testing.T) {
 	}
 	plan, _ := Plan(root)
 	res := Apply(plan, "")
-	if len(res) != 1 || res[0].Status != "skipped-exists" {
-		t.Fatalf("같은 이름이 있으면 건너뛰어야 한다: %+v", res)
+	if len(res) != 1 || res[0].Status != "done-suffix" || res[0].To != "보고서 (1).txt" {
+		t.Fatalf("같은 이름이 있으면 (1)을 붙여야 한다: %+v", res)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "보고서.txt")); string(b) != "nfc" {
+		t.Fatal("원래 있던 파일이 덮어써졌다")
 	}
 }
 
-// 되돌리기 CSV의 "현재 경로"는 부모 폴더까지 고친 뒤에도 실제로 있어야 한다
+func TestUniqueName(t *testing.T) {
+	taken := map[string]bool{"보고서.txt": true, "보고서 (1).txt": true, "회의록 (1).txt": true, "사진": true, "메모.tar.gz": true, ".env": true}
+	is := func(n string) bool { return taken[n] }
+	cases := []struct {
+		name  string
+		isDir bool
+		want  string
+	}{
+		{"보고서.txt", false, "보고서 (2).txt"},     // (1)도 있으면 (2)
+		{"회의록 (1).txt", false, "회의록 (2).txt"}, // (1)(1)이 아니라 (2)
+		{"사진", true, "사진 (1)"},                // 폴더는 확장자 없음
+		{"메모.tar.gz", false, "메모.tar (1).gz"},
+		{".env", false, ".env (1)"},     // 점으로 시작하는 이름은 확장자가 아니다
+		{"새 이름.txt", false, "새 이름.txt"}, // 겹치지 않으면 그대로
+	}
+	for _, c := range cases {
+		if got := UniqueName(c.name, c.isDir, is); got != c.want {
+			t.Errorf("UniqueName(%q) = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// 파일 선택: 고른 파일 중 이름을 고칠 것만, 같은 파일을 두 번 골라도 한 번만
+func TestPlanFiles(t *testing.T) {
+	root := t.TempDir()
+	a := filepath.Join(root, nfd("보고서.txt"))
+	b := filepath.Join(root, "ok.txt")
+	os.WriteFile(a, []byte("x"), 0o644)
+	os.WriteFile(b, []byte("y"), 0o644)
+	plan := PlanFiles([]string{a, b, a})
+	if len(plan) != 1 || plan[0].Dir != root || plan[0].To != "보고서.txt" || plan[0].Status != "pending" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	res := Apply(plan, "")
+	if res[0].Status != "done" {
+		t.Fatalf("apply: %+v", res)
+	}
+}
+
+// 수정 목록 CSV의 "수정된 경로"는 부모 폴더까지 고친 뒤에도 실제로 있어야 한다
 func TestUndoPathsExistAfterParentRenamed(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, nfd("사진"))
@@ -111,7 +154,7 @@ func TestUndoPathsExistAfterParentRenamed(t *testing.T) {
 	}
 	for _, row := range rows[1:] {
 		if _, err := os.Stat(row[0]); err != nil {
-			t.Errorf("되돌리기 CSV의 경로가 없다: %q", row[0])
+			t.Errorf("수정 목록 CSV의 경로가 없다: %q", row[0])
 		}
 		if norm.NFC.String(row[0]) != row[0] {
 			t.Errorf("현재 경로에 풀어진 글자가 남았다: %q", row[0])

@@ -7,14 +7,16 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/text/unicode/norm"
 )
 
 // Rename은 이름 하나를 고치는 계획과 결과다.
-// Status: "pending" | "done" | "skipped-exists" | "error: …"
+// Status: "pending" | "done" | "done-suffix"(같은 이름이 있어 To 끝에 (n)을 붙임) | "error: …"
 type Rename struct {
 	Dir, From, To string
 	Status        string
@@ -45,19 +47,70 @@ func Plan(root string) ([]Rename, error) {
 	return plan, err
 }
 
+// PlanFiles는 고른 파일들 중 이름을 고칠 것만 모은다(파일 선택 — 부모 폴더 이름은 건드리지 않는다).
+func PlanFiles(paths []string) []Rename {
+	var plan []Rename
+	seen := map[string]bool{}
+	for _, p := range paths {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		if fixed, changed := FixName(filepath.Base(p)); changed {
+			plan = append(plan, Rename{Dir: filepath.Dir(p), From: filepath.Base(p), To: fixed, Status: "pending"})
+		}
+	}
+	return plan
+}
+
+var numbered = regexp.MustCompile(`^(.*) \((\d+)\)$`)
+
+// UniqueName은 name이 이미 있으면 "이름 (1).확장자", 그것도 있으면 (2), (3)…을 돌려준다.
+// 이미 "이름 (1)"이면 "(1) (1)"로 잇지 않고 번호를 올린다. 폴더와 점으로 시작하는 이름(.env)은 확장자가 없다.
+func UniqueName(name string, isDir bool, exists func(string) bool) string {
+	if !exists(name) {
+		return name
+	}
+	stem, ext := name, ""
+	if !isDir {
+		if e := filepath.Ext(name); e != "" && e != name {
+			stem, ext = name[:len(name)-len(e)], e
+		}
+	}
+	n := 1
+	if m := numbered.FindStringSubmatch(stem); m != nil {
+		stem = m[1]
+		if k, err := strconv.Atoi(m[2]); err == nil {
+			n = k + 1
+		}
+	}
+	for ; ; n++ {
+		if c := fmt.Sprintf("%s (%d)%s", stem, n, ext); !exists(c) {
+			return c
+		}
+	}
+}
+
 // Apply는 계획대로 이름을 바꾸고 결과 Status를 채워 돌려준다.
-// undoCSV가 ""가 아니면 "현재 경로,원래 이름" CSV(엑셀용 BOM)를 남긴다.
-func Apply(plan []Rename, undoCSV string) []Rename {
+// 같은 이름이 이미 있으면 덮어쓰지 않고 UniqueName으로 (1), (2)…를 붙인다.
+// listCSV가 ""가 아니면 수정 목록 "수정된 경로,원래 이름" CSV(엑셀용 BOM)를 남긴다.
+func Apply(plan []Rename, listCSV string) []Rename {
 	out := make([]Rename, len(plan))
 	var undo [][]string
 	for i, r := range plan {
 		from, to := filepath.Join(r.Dir, r.From), filepath.Join(r.Dir, r.To)
+		status := "done"
 		if existsAsOtherFile(from, to) {
-			r.Status = "skipped-exists"
-		} else if err := os.Rename(from, to); err != nil {
+			info, _ := os.Stat(from)
+			r.To = UniqueName(r.To, info != nil && info.IsDir(), func(n string) bool {
+				return existsAsOtherFile(from, filepath.Join(r.Dir, n))
+			})
+			to, status = filepath.Join(r.Dir, r.To), "done-suffix"
+		}
+		if err := os.Rename(from, to); err != nil {
 			r.Status = fmt.Sprintf("error: %v", err)
 		} else {
-			r.Status = "done"
+			r.Status = status
 			undo = append(undo, []string{to, r.From})
 		}
 		out[i] = r
@@ -67,11 +120,11 @@ func Apply(plan []Rename, undoCSV string) []Rename {
 	for i := range undo {
 		undo[i][0] = currentPath(undo[i][0], out)
 	}
-	if undoCSV != "" && len(undo) > 0 {
-		if f, err := os.Create(undoCSV); err == nil {
+	if listCSV != "" && len(undo) > 0 {
+		if f, err := os.Create(listCSV); err == nil {
 			f.Write([]byte{0xEF, 0xBB, 0xBF}) // 엑셀에서 한글이 깨지지 않게 BOM
 			w := csv.NewWriter(f)
-			w.Write([]string{"현재 경로", "원래 이름"})
+			w.Write([]string{"수정된 경로", "원래 이름"})
 			w.WriteAll(undo)
 			f.Close()
 		}
@@ -84,7 +137,7 @@ func currentPath(path string, results []Rename) string {
 	for changed := true; changed; {
 		changed = false
 		for _, r := range results {
-			if r.Status != "done" {
+			if !strings.HasPrefix(r.Status, "done") {
 				continue
 			}
 			oldDir := filepath.Join(r.Dir, r.From) + string(os.PathSeparator)
