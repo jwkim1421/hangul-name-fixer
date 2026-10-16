@@ -39,12 +39,14 @@ type Settings struct {
 
 var (
 	errNoFolder = errors.New("수정할 폴더를 먼저 선택하세요")
-	errNoFiles  = errors.New("수정할 파일을 먼저 선택하세요")
+	errNoFiles  = errors.New("수정할 파일을 먼저 선택하거나 끌어다 놓으세요")
 )
 
 // ChooseFolder는 폴더 선택 창을 띄운다. 취소하면 "".
+// 윈도우 폴더 선택 창은 파일을 보여 주지 않아, 고른 뒤 목록에 나온다는 것을 제목에 적는다.
 func (a *App) ChooseFolder() (string, error) {
-	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: "수정할 폴더를 선택하세요"})
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "수정할 폴더를 선택하세요 — 안의 파일은 선택한 뒤 목록에 표시됩니다"})
 }
 
 // ChooseFiles는 파일 선택 창(여러 개 선택 가능)을 띄운다. 취소하면 빈 목록.
@@ -60,12 +62,12 @@ func (a *App) Preview(root string) ([]core.Rename, error) {
 	return core.Plan(root)
 }
 
-// PreviewFiles는 고른 파일 중 바꿀 이름 목록을 돌려준다.
-func (a *App) PreviewFiles(paths []string) ([]core.Rename, error) {
+// PreviewPaths는 고르거나 끌어다 놓은 파일·폴더에서 바꿀 이름 목록을 돌려준다.
+func (a *App) PreviewPaths(paths []string) ([]core.Rename, error) {
 	if len(paths) == 0 {
 		return nil, errNoFiles
 	}
-	return core.PlanFiles(paths), nil
+	return core.PlanPaths(paths), nil
 }
 
 // FixAll은 폴더 안의 이름을 고친다. makeCSV면 그 폴더에 수정목록_YYYYMMDD_HHMMSS.csv를 남긴다.
@@ -80,12 +82,13 @@ func (a *App) FixAll(root string, makeCSV bool) (FixResult, error) {
 	return apply(plan, root, makeCSV), nil
 }
 
-// FixFiles는 고른 파일들의 이름을 고친다. CSV는 첫 파일이 있는 폴더에 남긴다.
-func (a *App) FixFiles(paths []string, makeCSV bool) (FixResult, error) {
+// FixPaths는 고르거나 끌어다 놓은 파일·폴더의 이름을 고친다. 여러 폴더에서 왔어도 CSV는
+// 첫 번째 항목이 있는 폴더에 남긴다(그 폴더는 이름이 바뀌지 않는다).
+func (a *App) FixPaths(paths []string, makeCSV bool) (FixResult, error) {
 	if len(paths) == 0 {
 		return FixResult{}, errNoFiles
 	}
-	return apply(core.PlanFiles(paths), filepath.Dir(paths[0]), makeCSV), nil
+	return apply(core.PlanPaths(paths), filepath.Dir(filepath.Clean(paths[0])), makeCSV), nil
 }
 
 func apply(plan []core.Rename, dir string, makeCSV bool) FixResult {

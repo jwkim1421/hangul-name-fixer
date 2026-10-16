@@ -116,20 +116,35 @@ func TestUniqueName(t *testing.T) {
 	}
 }
 
-// 파일 선택: 고른 파일 중 이름을 고칠 것만, 같은 파일을 두 번 골라도 한 번만
-func TestPlanFiles(t *testing.T) {
+// 파일 선택·끌어다 놓기: 고른 파일은 그 이름만, 고른 폴더는 안쪽(자식 먼저)과 폴더 자신의 이름까지.
+// 같은 것을 두 번 넣어도 한 번만.
+func TestPlanPaths(t *testing.T) {
 	root := t.TempDir()
 	a := filepath.Join(root, nfd("보고서.txt"))
 	b := filepath.Join(root, "ok.txt")
+	dir := filepath.Join(root, nfd("사진"))
 	os.WriteFile(a, []byte("x"), 0o644)
 	os.WriteFile(b, []byte("y"), 0o644)
-	plan := PlanFiles([]string{a, b, a})
-	if len(plan) != 1 || plan[0].Dir != root || plan[0].To != "보고서.txt" || plan[0].Status != "pending" {
-		t.Fatalf("plan = %+v", plan)
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, nfd("여행.jpg")), []byte("z"), 0o644)
+	plan := PlanPaths([]string{a, b, a, dir})
+	if len(plan) != 3 || plan[0].To != "여행.jpg" || plan[0].Dir != dir {
+		t.Fatalf("폴더 안쪽이 먼저여야 한다: %+v", plan)
 	}
-	res := Apply(plan, "")
-	if res[0].Status != "done" {
-		t.Fatalf("apply: %+v", res)
+	got := map[string]bool{}
+	for _, r := range plan {
+		got[r.Dir+"|"+r.To] = r.Status == "pending"
+	}
+	if !got[root+"|보고서.txt"] || !got[root+"|사진"] {
+		t.Fatalf("고른 파일과 폴더 자신의 이름도 고쳐야 한다: %+v", plan)
+	}
+	for _, r := range Apply(plan, "") {
+		if r.Status != "done" {
+			t.Fatalf("apply: %+v", r)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "사진", "여행.jpg")); err != nil {
+		t.Fatal("고친 경로가 없다:", err)
 	}
 }
 

@@ -186,21 +186,34 @@ const inWails = typeof window.go !== "undefined";
 const goApp = () => window.go.main.App;
 let makeCSV = false; // "수정 목록(*.csv) 파일 생성" — 프로그램이 설정 파일에 기억한다
 
-async function wailsPick(kind) {
-  let picked;
-  try {
-    picked = kind === "folder" ? await goApp().ChooseFolder() : await goApp().ChooseFiles();
-  } catch (e) {
-    alert(`${kind === "folder" ? "폴더" : "파일"}를 열지 못했습니다: ` + e);
-    return;
+// kind: "folder"(폴더 선택) | "files"(파일 선택) | "drop"(창에 끌어다 놓기 — dropped에 경로 목록)
+async function wailsPick(kind, dropped) {
+  let picked = dropped;
+  if (!picked) {
+    try {
+      picked = kind === "folder" ? await goApp().ChooseFolder() : await goApp().ChooseFiles();
+    } catch (e) {
+      alert(`${kind === "folder" ? "폴더" : "파일"}를 열지 못했습니다: ` + e);
+      return;
+    }
   }
   if (!picked || picked.length === 0) return; // 취소
-  const first = kind === "folder" ? picked : picked[0];
+  const folder = kind === "folder";
+  const first = folder ? picked : picked[0];
   const sep = first.includes("\\") ? "\\" : "/";
-  const root = kind === "folder" ? picked : "";
-  const rel = (dir) => (root && dir.length > root.length ? dir.slice(root.length + 1) + sep : "");
+  // 표에 보일 경로: 폴더 선택이면 그 폴더 기준, 끌어다 놓은 폴더 안쪽이면 "그 폴더\…", 그 밖은 이름만
+  const bases = folder ? [picked] : picked;
+  const rel = (dir) => {
+    for (const b of bases) {
+      if (dir === b || dir.startsWith(b + sep)) {
+        const from = folder ? b.length + 1 : b.lastIndexOf(sep) + 1;
+        return dir.length >= from ? dir.slice(from) + sep : "";
+      }
+    }
+    return "";
+  };
   const fixPath = (p) => p.split(sep).map((s) => fixName(s).fixed).join(sep);
-  const plan = (await (kind === "folder" ? goApp().Preview(picked) : goApp().PreviewFiles(picked))) || [];
+  const plan = (await (folder ? goApp().Preview(picked) : goApp().PreviewPaths(picked))) || [];
   const items = plan.map((r) => ({ key: r.Dir + sep + r.From, prefix: fixPath(rel(r.Dir)), from: rel(r.Dir) + r.From }));
   items.forEach((it, i) => (it.to = it.prefix + plan[i].To));
   job = {
@@ -208,7 +221,7 @@ async function wailsPick(kind) {
     run: async () => {
       let res;
       try {
-        res = await (kind === "folder" ? goApp().FixAll(picked, makeCSV) : goApp().FixFiles(picked, makeCSV));
+        res = await (folder ? goApp().FixAll(picked, makeCSV) : goApp().FixPaths(picked, makeCSV));
       } catch (e) {
         $("summary").textContent = "수정하지 못했습니다: " + e;
         return;
@@ -230,22 +243,32 @@ async function wailsPick(kind) {
       }
     },
   };
-  const where = kind === "folder" ? `폴더: ${picked}` : `선택한 파일 ${picked.length}개 중`;
+  const where = folder ? `폴더: ${picked}` : `${kind === "drop" ? "끌어다 놓은" : "선택한"} 항목 ${picked.length}개 중`;
   show(items, items.length ? `수정할 파일 ${items.length}개 (${where})` : EMPTY);
 }
 
 // ── 연결 ───────────────────────────────────────────────────────────────
 if (inWails) {
   document.body.classList.add("app");
-  $("privacy").textContent = "🔒 파일 내용에 접근하지 않으며 외부로 전송하지 않습니다 — 이 컴퓨터에서 파일 이름만 바꿉니다";
+  $("privacy").textContent = "🔒 파일 내용에 접근하지 않으며, 데이터를 외부로 전송하지 않습니다. — 로컬 환경에서 파일명만 수정합니다.";
   $("mode-folder").hidden = false;
   $("mode-zip").hidden = true;
   $("folder-title").textContent = "폴더·파일 선택하여 수정";
-  $("folder-desc").textContent = "폴더나 파일을 선택하면 수정할 파일이 표시됩니다.";
+  $("folder-desc").textContent = "폴더나 파일을 선택하거나 이 창에 끌어다 놓으면 수정할 파일이 표시됩니다.";
   $("pick-app-files").hidden = false;
   $("csv-option").hidden = false;
   $("pick-folder").addEventListener("click", () => wailsPick("folder"));
   $("pick-app-files").addEventListener("click", () => wailsPick("files"));
+  // 창에 파일·폴더를 끌어다 놓기(여러 개). 경로는 Wails가 넘겨준다(main.go DragAndDrop.EnableFileDrop)
+  if (window.runtime && window.runtime.OnFileDrop) {
+    window.runtime.OnFileDrop((x, y, paths) => wailsPick("drop", paths), false);
+  }
+  let dragDepth = 0;
+  const isFiles = (e) => e.dataTransfer && [...e.dataTransfer.types].includes("Files");
+  const dragEnd = () => { dragDepth = 0; document.body.classList.remove("dragging"); };
+  window.addEventListener("dragenter", (e) => { if (isFiles(e)) { dragDepth++; document.body.classList.add("dragging"); } });
+  window.addEventListener("dragleave", (e) => { if (isFiles(e) && --dragDepth <= 0) dragEnd(); });
+  window.addEventListener("drop", dragEnd);
   goApp().GetSettings().then((s) => { makeCSV = !!(s && s.MakeCSV); $("make-csv").checked = makeCSV; }).catch(() => {});
   $("make-csv").addEventListener("change", (e) => {
     makeCSV = e.target.checked;

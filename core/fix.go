@@ -41,26 +41,41 @@ func Plan(root string) ([]Rename, error) {
 		return nil
 	})
 	// 깊은 곳부터 바꿔야 부모 폴더 이름이 바뀌어도 자식 경로가 유효하다
-	sort.SliceStable(plan, func(i, j int) bool {
-		return strings.Count(plan[i].Dir, string(os.PathSeparator)) > strings.Count(plan[j].Dir, string(os.PathSeparator))
-	})
+	sortDeepestFirst(plan)
 	return plan, err
 }
 
-// PlanFiles는 고른 파일들 중 이름을 고칠 것만 모은다(파일 선택 — 부모 폴더 이름은 건드리지 않는다).
-func PlanFiles(paths []string) []Rename {
+// PlanPaths는 고르거나 끌어다 놓은 항목에서 고칠 이름을 모은다. 파일은 그 이름만,
+// 폴더는 안쪽(Plan)과 폴더 자신의 이름까지. 같은 항목은 한 번만, 깊은 곳부터.
+func PlanPaths(paths []string) []Rename {
 	var plan []Rename
 	seen := map[string]bool{}
-	for _, p := range paths {
-		if seen[p] {
-			continue
-		}
-		seen[p] = true
-		if fixed, changed := FixName(filepath.Base(p)); changed {
-			plan = append(plan, Rename{Dir: filepath.Dir(p), From: filepath.Base(p), To: fixed, Status: "pending"})
+	add := func(r Rename) {
+		if k := filepath.Join(r.Dir, r.From); !seen[k] {
+			seen[k] = true
+			plan = append(plan, r)
 		}
 	}
+	for _, p := range paths {
+		p = filepath.Clean(p)
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			inner, _ := Plan(p)
+			for _, r := range inner {
+				add(r)
+			}
+		}
+		if fixed, changed := FixName(filepath.Base(p)); changed {
+			add(Rename{Dir: filepath.Dir(p), From: filepath.Base(p), To: fixed, Status: "pending"})
+		}
+	}
+	sortDeepestFirst(plan)
 	return plan
+}
+
+func sortDeepestFirst(plan []Rename) {
+	sort.SliceStable(plan, func(i, j int) bool {
+		return strings.Count(plan[i].Dir, string(os.PathSeparator)) > strings.Count(plan[j].Dir, string(os.PathSeparator))
+	})
 }
 
 var numbered = regexp.MustCompile(`^(.*) \((\d+)\)$`)

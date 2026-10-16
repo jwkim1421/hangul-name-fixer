@@ -64,11 +64,11 @@ func TestFixFilesRenamesOnlyChosenFiles(t *testing.T) {
 	os.WriteFile(a, []byte("x"), 0o644)
 	os.WriteFile(b, []byte("y"), 0o644)
 	app := testApp(t)
-	plan, err := app.PreviewFiles([]string{a})
+	plan, err := app.PreviewPaths([]string{a})
 	if err != nil || len(plan) != 1 {
 		t.Fatalf("preview files = %+v, %v", plan, err)
 	}
-	res, err := app.FixFiles([]string{a}, true)
+	res, err := app.FixPaths([]string{a}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,8 +84,24 @@ func TestFixRejectsEmptyChoice(t *testing.T) {
 	if _, err := testApp(t).FixAll("", true); err == nil {
 		t.Fatal("폴더를 고르지 않았으면 오류여야 한다")
 	}
-	if _, err := testApp(t).FixFiles(nil, true); err == nil {
+	if _, err := testApp(t).FixPaths(nil, true); err == nil {
 		t.Fatal("파일을 고르지 않았으면 오류여야 한다")
+	}
+}
+
+// 여러 폴더에서 끌어다 놓아도 수정 목록은 첫 번째 항목이 있는 폴더에 남긴다(2026-10-16 사용자 피드백)
+func TestFixPathsWritesCSVNextToFirstItem(t *testing.T) {
+	one, two := t.TempDir(), t.TempDir()
+	a := filepath.Join(two, norm.NFD.String("가.txt"))
+	b := filepath.Join(one, norm.NFD.String("나.txt"))
+	os.WriteFile(a, []byte("x"), 0o644)
+	os.WriteFile(b, []byte("y"), 0o644)
+	res, err := testApp(t).FixPaths([]string{a, b}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(res.CSV) != two || len(csvFiles(one)) != 0 {
+		t.Fatalf("CSV = %q, want in %q", res.CSV, two)
 	}
 }
 
